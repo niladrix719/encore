@@ -134,6 +134,7 @@ pub struct Namespace {
 pub struct Var {
     pub type_ann: Option<ast::TsTypeAnn>,
     pub expr: Option<Box<ast::Expr>>,
+    pub is_const: bool,
 }
 
 #[derive(Debug)]
@@ -537,6 +538,7 @@ fn process_decl(ctx: &ResolveState, ns: &mut NSData, decl: &ast::Decl) -> Vec<Rc
                         ObjectKind::Var(Var {
                             type_ann: b.type_ann,
                             expr: var_decl.init.clone(),
+                            is_const: d.kind == ast::VarDeclKind::Const,
                         }),
                     );
                     ns.add_top_level(AstId::new(b.id, b.name.clone()), obj.clone());

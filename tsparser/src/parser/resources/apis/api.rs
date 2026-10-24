@@ -24,6 +24,7 @@ use crate::parser::resources::parseutil::{
 };
 use crate::parser::resources::Resource;
 use crate::parser::respath::Path;
+use crate::parser::types::{Literal, ObjectKind, Type, TypeChecker};
 use crate::parser::usageparser::{ResolveUsageData, Usage};
 use crate::parser::{FilePath, Range};
 use crate::span_err::ErrReporter;
@@ -372,6 +373,13 @@ pub const ENDPOINT_PARSER: ResourceParser = ResourceParser {
                 }
             };
 
+            let tags = report_and_continue!(cfg
+                .tags
+                .unwrap_or_default()
+                .iter()
+                .map(|tag| resolve_tag(pass.type_checker, module.clone(), tag))
+                .collect::<ParseResult<Vec<_>>>());
+
             // Compute the body limit. Null means no limit. No value means 2MiB.
             let body_limit: Option<u64> = match cfg.bodyLimit {
                 Some(Nullable::Present(val)) => Some(val),
@@ -393,7 +401,7 @@ pub const ENDPOINT_PARSER: ResourceParser = ResourceParser {
                 static_assets,
                 body_limit,
                 encoding,
-                tags: cfg.tags.unwrap_or_default(),
+                tags,
                 sensitive: cfg.sensitive.unwrap_or(false),
             }));
 
@@ -541,6 +549,25 @@ impl LitParser for HeadersMap {
     }
 }
 
+fn resolve_tag(
+    type_checker: &TypeChecker,
+    module: Lrc<Module>,
+    expr: &ast::Expr,
+) -> ParseResult<String> {
+    if let ast::Expr::Lit(ast::Lit::Str(str)) = expr {
+        return Ok(str.value.to_string());
+    }
+
+    let value = type_checker
+        .resolve_obj(module, expr)
+        .filter(|obj| matches!(&obj.kind, ObjectKind::Var(var) if var.is_const))
+        .map(|obj| type_checker.resolve_obj_type(&obj));
+    match value {
+        Some(Type::Literal(Literal::String(str))) => Ok(str),
+        _ => Err(expr.parse_err("expected string literal or reference to a const string literal")),
+    }
+}
+
 #[derive(LitParser, Debug)]
 #[allow(non_snake_case)]
 struct EndpointConfig {
@@ -549,7 +576,7 @@ struct EndpointConfig {
     expose: Option<bool>,
     auth: Option<bool>,
     bodyLimit: Option<Nullable<u64>>,
-    tags: Option<Vec<String>>,
+    tags: Option<Vec<ast::Expr>>,
     sensitive: Option<bool>,
 
     // For static assets.

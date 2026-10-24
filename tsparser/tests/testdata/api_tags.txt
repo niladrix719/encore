@@ -1,0 +1,30 @@
+-- tags/tags.ts --
+export const PREMIUM = "premium";
+export const BETA = "beta";
+
+-- tags/named.ts --
+export { PREMIUM as RENAMED } from "./tags";
+-- tags/star.ts --
+export * from "./tags";
+-- foo/foo.ts --
+import { api } from "encore.dev/api";
+import { PREMIUM, BETA as BETA_TAG } from "../tags/tags";
+import { RENAMED } from "../tags/named";
+import { BETA as STARRED } from "../tags/star";
+
+const LOCAL = "local";
+
+export const literal = api({ tags: ["plain"] }, async (): Promise<void> => {});
+export const imported = api({ tags: [PREMIUM, BETA_TAG] }, async (): Promise<void> => {});
+export const mixed = api({ tags: ["plain", LOCAL, PREMIUM] }, async (): Promise<void> => {});
+export const reexported = api({ tags: [RENAMED, STARRED] }, async (): Promise<void> => {});
+export const none = api({}, async (): Promise<void> => {});
+
+-- package.json --
+{
+  "name": "foo",
+  "type": "module",
+  "dependencies": {
+    "encore.dev": "^1.35.0"
+  }
+}

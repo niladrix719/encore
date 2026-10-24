@@ -32,6 +32,61 @@ fn test_parser() {
     });
 }
 
+#[test]
+fn test_api_tags() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/api_tags.txt");
+    let ar = txtar::from_str(&fs::read_to_string(path).unwrap());
+    let tmp_dir = TempDir::with_prefix("parse").unwrap();
+    ar.materialize(&tmp_dir).unwrap();
+    let app = parse_txtar(tmp_dir.path()).unwrap();
+
+    let tags = |name: &str| -> Vec<String> {
+        let rpc = app
+            .meta
+            .svcs
+            .iter()
+            .flat_map(|svc| &svc.rpcs)
+            .find(|rpc| rpc.name == name)
+            .unwrap_or_else(|| panic!("endpoint {name} not found"));
+        rpc.tags.iter().map(|t| t.value.clone()).collect()
+    };
+    assert_eq!(tags("literal"), ["plain"]);
+    assert_eq!(tags("imported"), ["premium", "beta"]);
+    assert_eq!(tags("mixed"), ["plain", "local", "premium"]);
+    assert_eq!(tags("reexported"), ["premium", "beta"]);
+    assert!(tags("none").is_empty());
+}
+
+#[test]
+fn test_api_tags_rejects_non_constants() {
+    for (case, tag) in [
+        ("let", "MUTABLE"),
+        ("annotated", "WIDE"),
+        ("call", "make()"),
+        ("template", "`a${1}`"),
+        ("member", "OBJ.x"),
+    ] {
+        let src = format!(
+            r#"-- foo/foo.ts --
+import {{ api }} from "encore.dev/api";
+let MUTABLE = "x";
+const WIDE: string = "x";
+const make = () => "x";
+const OBJ = {{ x: "x" }};
+export const t = api({{ tags: [{tag}] }}, async (): Promise<void> => {{}});
+-- package.json --
+{{"name": "foo", "type": "module", "dependencies": {{"encore.dev": "^1.35.0"}}}}
+"#
+        );
+        let tmp_dir = TempDir::with_prefix("parse").unwrap();
+        txtar::from_str(&src).materialize(&tmp_dir).unwrap();
+        assert!(
+            parse_txtar(tmp_dir.path()).is_err(),
+            "{case}: tag {tag} should be rejected"
+        );
+    }
+}
+
 fn parse_txtar(app_root: &Path) -> Result<app::AppDesc> {
     let globals = Globals::new();
     let cm: Rc<SourceMap> = Default::default();
